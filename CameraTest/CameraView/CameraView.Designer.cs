@@ -516,29 +516,41 @@ namespace CameraTest
 
         private async void Sensor_Triggered(object sender, KeyPressEventArgs e)
         {
-            
-            if (e.KeyChar.Equals('+'))
-            {
-                CancellationTokenSource sensorTriggeredCT = new CancellationTokenSource();
-                CancellationTokenSource foundCancellationSource = new CancellationTokenSource();
-                
-                scanner_timer.Start();
+            if (!e.KeyChar.Equals('+')) return;
 
-                DateTime now = DateTime.Now;
-                DateTime future = DateTime.Now.AddSeconds(30);
-                Task.Run(async () => await RunCameraProcess(sensorTriggeredCT.Token, foundCancellationSource));
-                try
+            using var foundCts = new CancellationTokenSource();
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(foundCts.Token, timeoutCts.Token);
+
+            var foundTaskCompletionSource = new TaskCompletionSource<(string, string)>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            scanner_timer.Start();
+
+            try
+            {
+                var worker = Task.Run( () => RunCameraProcess(linkedCts.Token, foundCts, foundTaskCompletionSource), linkedCts.Token);
+
+                var completed = await Task.WhenAny(foundTaskCompletionSource.Task,
+                    Task.Delay(Timeout.Infinite, timeoutCts.Token))
+                    .ConfigureAwait(true);
+
+                if(completed == foundTaskCompletionSource.Task)
                 {
-                    while (now < future)
-                    {
-                        foundCancellationSource.Token.ThrowIfCancellationRequested();
-                        now = DateTime.Now;
-                    } 
+                    var results = await foundTaskCompletionSource.Task;
+                    sn_textbox.Text = results.Item1;
+                    model_textbox.Text = results.Item2;
                 }
-                catch(OperationCanceledException) when (foundCancellationSource.Token.IsCancellationRequested) { }
-                model_textbox.Text = modelText;
-                sensorTriggeredCT.Cancel();
+                else
+                {
+                    model_textbox.Text = "Not Found";
+                }
+            }
+            catch(OperationCanceledException) { }
+            finally
+            {
                 scanner_timer.Stop();
+                foundCts.Cancel();
+                timeoutCts.Cancel();
             }
         }
 

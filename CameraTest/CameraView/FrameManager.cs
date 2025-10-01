@@ -19,6 +19,8 @@ namespace Camera
     {
         public const int TOTAL_SLOTS = 4;
 
+        public string Model { get; set; }
+        public string SN { get; set; }
         private readonly string MistralPath = @"C:\mistraltest.ps1";
         private readonly string Path = @"C:\CameraCaptures\";
 
@@ -63,6 +65,7 @@ namespace Camera
         public async Task<(string barcode, string model)> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts)
         {
             string barcode = string.Empty;
+            string model = string.Empty;
             try
             {
                 foundCts.Token.ThrowIfCancellationRequested();
@@ -79,29 +82,18 @@ namespace Camera
                 try
                 {
                     foundCts.Token.ThrowIfCancellationRequested();
-                    //string barcode = await BarCodeReader(ImagePath, foundCts.Token);
-                    string model = await GetModelNoFromAI(ImagePath, OutputPath, foundCts.Token);
-                    if (/*!String.IsNullOrEmpty(barcode) &&*/ !String.IsNullOrEmpty(model))
+                    await BarCodeReader(ImagePath, foundCts.Token);
+                    await GetModelNoFromAI(ImagePath, OutputPath, foundCts.Token);
+                    
+                    if (!String.IsNullOrEmpty(SN) && !String.IsNullOrEmpty(Model))
                         foundCts.Cancel();
-                    //await Task.Run(async () =>
-                    //{
-
-                    //    //string barcode = await BarCodeReader(ImagePath);
-                    //    //string model = await GetModelNoFromAI(ImagePath, OutputPath);
-                    //    //if (!String.IsNullOrEmpty(barcode) && !String.IsNullOrEmpty(model))
-                    //    //    foundCts.Cancel();
-                    //});
-                    return (barcode, model);
+                    return (SN, Model);
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Save failed: {ex.Message}", "Capture", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return ("", ""); 
-                }
+                catch { }
 
             }
-            catch(OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCts.Token.IsCancellationRequested) { return ("", ""); }
-                      
+            catch(OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCts.Token.IsCancellationRequested) { }
+            return ("", "");
         }
 
 
@@ -134,7 +126,7 @@ namespace Camera
             }
         }
 
-        private async Task<string> GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default)
+        private async Task GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default)
         {
             string ModelNo = string.Empty;
             try
@@ -155,20 +147,21 @@ namespace Camera
                     }
 
                     if (!String.IsNullOrEmpty(ModelNo))
+                    {
+                        Model = ModelNo;
                         break;
+                    }
+                       
 
                 }
-                MessageBox.Show($"Model: {ModelNo}");
+                //MessageBox.Show($"Model: {ModelNo}");
             }
             catch(OperationCanceledException) when (ct.IsCancellationRequested) { }
-         
-           
-            return ModelNo;
+
         }
 
-        private Task<string> BarCodeReader(string imagePath, CancellationToken ct = default)
+        private Task BarCodeReader(string imagePath, CancellationToken ct = default)
         {
-            string val = string.Empty;
             try
             {
                 ct.ThrowIfCancellationRequested();
@@ -187,13 +180,13 @@ namespace Camera
                 
                 if (result != null)
                 {
-                    MessageBox.Show(result.ToString());
-                    val = result.ToString();
+                    Console.WriteLine("SN : " + result.ToString());
+                    SN = result.ToString();
                 }
                
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            return Task.FromResult(val);
+            return Task.CompletedTask;
 
         }
 

@@ -458,7 +458,7 @@ namespace CameraTest
         }
 
         #endregion
-        private async Task RunCameraProcess(CancellationToken ct, CancellationTokenSource foundCancel)
+        private async Task RunCameraProcess(CancellationToken ct, CancellationTokenSource foundCts, TaskCompletionSource<(string, string)> foundTcs)
         {
             try
             {
@@ -466,12 +466,12 @@ namespace CameraTest
 
                 tasks.Add(Task.Run(async () =>
                 {
-                    Mat foundFrame = await frameManager.InspectFrames(_frame1, ct, foundCancel.Token);
+                    Mat foundFrame = await frameManager.InspectFrames(_frame1, ct, foundCts.Token);
                     if (foundFrame != null)
                     {
-                        var found = await frameManager.TakePhoto(foundFrame, "Camera1", ct, foundCancel);
-                        if (!String.IsNullOrEmpty(found.model))
-                           modelText = found.model.ToString();
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera1", ct, foundCts);
+                        if (!String.IsNullOrEmpty(found.model) && !String.IsNullOrEmpty(found.barcode))
+                           foundTcs.SetResult((found.barcode, found.model));
                         return;
                     }
                     else
@@ -481,12 +481,12 @@ namespace CameraTest
                 }, ct));
                 tasks.Add(Task.Run(async () =>
                 {
-                    Mat foundFrame = await frameManager.InspectFrames(_frame2, ct, foundCancel.Token);
+                    Mat foundFrame = await frameManager.InspectFrames(_frame2, ct, foundCts.Token);
                     if (foundFrame != null)
                     {
-                        var found = await frameManager.TakePhoto(foundFrame, "Camera2", ct, foundCancel);
-                        if (!String.IsNullOrEmpty(found.model))
-                            modelText = found.model.ToString();
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera2", ct, foundCts);
+                        if (!String.IsNullOrEmpty(found.model) && !String.IsNullOrEmpty(found.barcode))
+                            foundTcs.SetResult((found.barcode, found.model));
                     }
                     else
                     {
@@ -496,12 +496,12 @@ namespace CameraTest
                 }, ct));
                 tasks.Add(Task.Run(async () =>
                 {
-                    Mat foundFrame = await frameManager.InspectFrames(_frame3, ct, foundCancel.Token);
+                    Mat foundFrame = await frameManager.InspectFrames(_frame3, ct, foundCts.Token);
                     if (foundFrame != null)
                     {
-                        var found = await frameManager.TakePhoto(foundFrame, "Camera3", ct, foundCancel);
-                        if (!String.IsNullOrEmpty(found.model))
-                            modelText = found.model.ToString();
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera3", ct, foundCts);
+                        if (!String.IsNullOrEmpty(found.model) && !String.IsNullOrEmpty(found.barcode))
+                            foundTcs.SetResult((found.barcode, found.model));
                     }
                     else
                     {
