@@ -64,8 +64,7 @@ namespace CameraTest
             this.focus2_trackbar = new System.Windows.Forms.TrackBar();
             this.camera2_picturebox = new System.Windows.Forms.PictureBox();
             this.unitinfo_groupbox = new System.Windows.Forms.GroupBox();
-            this.textBox2 = new System.Windows.Forms.TextBox();
-            this.textBox1 = new System.Windows.Forms.TextBox();
+            this.model_text_label = new System.Windows.Forms.Label();
             this.model_label = new System.Windows.Forms.Label();
             this.sn_label = new System.Windows.Forms.Label();
             this.loading_picturebox = new System.Windows.Forms.PictureBox();
@@ -73,6 +72,8 @@ namespace CameraTest
             this.camera2_timer = new System.Windows.Forms.Timer(this.components);
             this.camera3_timer = new System.Windows.Forms.Timer(this.components);
             this.scanner_timer = new System.Windows.Forms.Timer(this.components);
+            this.model_textbox = new System.Windows.Forms.TextBox();
+            this.sn_textbox = new System.Windows.Forms.TextBox();
             this.camera1_groupbox.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.zoom1_trackbar)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.brightness1_trackbar)).BeginInit();
@@ -387,8 +388,9 @@ namespace CameraTest
             // 
             // unitinfo_groupbox
             // 
-            this.unitinfo_groupbox.Controls.Add(this.textBox2);
-            this.unitinfo_groupbox.Controls.Add(this.textBox1);
+            this.unitinfo_groupbox.Controls.Add(this.sn_textbox);
+            this.unitinfo_groupbox.Controls.Add(this.model_textbox);
+            this.unitinfo_groupbox.Controls.Add(this.model_text_label);
             this.unitinfo_groupbox.Controls.Add(this.model_label);
             this.unitinfo_groupbox.Controls.Add(this.sn_label);
             this.unitinfo_groupbox.Controls.Add(this.loading_picturebox);
@@ -399,21 +401,14 @@ namespace CameraTest
             this.unitinfo_groupbox.TabStop = false;
             this.unitinfo_groupbox.Text = "Unit Info";
             // 
-            // textBox2
+            // model_text_label
             // 
-            this.textBox2.Font = new System.Drawing.Font("Microsoft Sans Serif", 26.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.textBox2.Location = new System.Drawing.Point(32, 269);
-            this.textBox2.Name = "textBox2";
-            this.textBox2.Size = new System.Drawing.Size(424, 47);
-            this.textBox2.TabIndex = 4;
-            // 
-            // textBox1
-            // 
-            this.textBox1.Font = new System.Drawing.Font("Microsoft Sans Serif", 26.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.textBox1.Location = new System.Drawing.Point(27, 93);
-            this.textBox1.Name = "textBox1";
-            this.textBox1.Size = new System.Drawing.Size(426, 47);
-            this.textBox1.TabIndex = 3;
+            this.model_text_label.AutoSize = true;
+            this.model_text_label.Font = new System.Drawing.Font("Microsoft Sans Serif", 26.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.model_text_label.Location = new System.Drawing.Point(33, 273);
+            this.model_text_label.Name = "model_text_label";
+            this.model_text_label.Size = new System.Drawing.Size(0, 39);
+            this.model_text_label.TabIndex = 3;
             // 
             // model_label
             // 
@@ -463,6 +458,22 @@ namespace CameraTest
             this.scanner_timer.Interval = 50;
             this.scanner_timer.Tick += new System.EventHandler(this.scanner_timer_Tick);
             // 
+            // model_textbox
+            // 
+            this.model_textbox.Font = new System.Drawing.Font("Microsoft Sans Serif", 26.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.model_textbox.Location = new System.Drawing.Point(43, 271);
+            this.model_textbox.Name = "model_textbox";
+            this.model_textbox.Size = new System.Drawing.Size(385, 47);
+            this.model_textbox.TabIndex = 4;
+            // 
+            // sn_textbox
+            // 
+            this.sn_textbox.Font = new System.Drawing.Font("Microsoft Sans Serif", 26.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.sn_textbox.Location = new System.Drawing.Point(41, 101);
+            this.sn_textbox.Name = "sn_textbox";
+            this.sn_textbox.Size = new System.Drawing.Size(386, 47);
+            this.sn_textbox.TabIndex = 5;
+            // 
             // CameraView
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -505,19 +516,27 @@ namespace CameraTest
 
         private async void Sensor_Triggered(object sender, KeyPressEventArgs e)
         {
+            
             if (e.KeyChar.Equals('+'))
             {
-                
-                scanner_timer.Start();
                 CancellationTokenSource sensorTriggeredCT = new CancellationTokenSource();
                 CancellationTokenSource foundCancellationSource = new CancellationTokenSource();
+                
+                scanner_timer.Start();
+
                 DateTime now = DateTime.Now;
-                DateTime future = DateTime.Now.AddSeconds(5);
+                DateTime future = DateTime.Now.AddSeconds(30);
                 Task.Run(async () => await RunCameraProcess(sensorTriggeredCT.Token, foundCancellationSource));
-                while (now < future)
+                try
                 {
-                    now = DateTime.Now;
+                    while (now < future)
+                    {
+                        foundCancellationSource.Token.ThrowIfCancellationRequested();
+                        now = DateTime.Now;
+                    } 
                 }
+                catch(OperationCanceledException) when (foundCancellationSource.Token.IsCancellationRequested) { }
+                model_textbox.Text = modelText;
                 sensorTriggeredCT.Cancel();
                 scanner_timer.Stop();
             }
@@ -532,11 +551,9 @@ namespace CameraTest
         private System.Windows.Forms.PictureBox camera1_picturebox;
         private System.Windows.Forms.PictureBox camera3_picturebox;
         private System.Windows.Forms.PictureBox camera2_picturebox;
-        private System.Windows.Forms.TextBox textBox1;
         private System.Windows.Forms.Label model_label;
         private System.Windows.Forms.Label sn_label;
         private System.Windows.Forms.PictureBox loading_picturebox;
-        private System.Windows.Forms.TextBox textBox2;
         private System.Windows.Forms.Label brightness1_label;
         private System.Windows.Forms.Label focus1_label;
         private System.Windows.Forms.TrackBar brightness1_trackbar;
@@ -564,5 +581,8 @@ namespace CameraTest
         private Label focus1_val_label;
         private Label zoom3_val_label;
         private Label zoom2_val_label;
+        private Label model_text_label;
+        private TextBox sn_textbox;
+        private TextBox model_textbox;
     }
 }

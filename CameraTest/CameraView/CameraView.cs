@@ -36,7 +36,8 @@ namespace CameraTest
         const double zoomVal = 0.1;
         private readonly string Path = @"C:\CameraCaptures\";
         private FrameManager frameManager;
-
+        private string modelText;
+        private string snText;
         public CameraView()
         {
             InitializeComponent();
@@ -463,15 +464,14 @@ namespace CameraTest
             {
                 List<Task> tasks = new List<Task>();
 
-                //Mat foundFrame = frameManager.InspectFrames(_frame1).Result;
-                //frameManager.TakePhoto(foundFrame, "Camera1");
-
                 tasks.Add(Task.Run(async () =>
                 {
                     Mat foundFrame = await frameManager.InspectFrames(_frame1, ct, foundCancel.Token);
                     if (foundFrame != null)
                     {
-                        await frameManager.TakePhoto(foundFrame, "Camera1", ct, foundCancel);
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera1", ct, foundCancel);
+                        if (!String.IsNullOrEmpty(found.model))
+                           modelText = found.model.ToString();
                         return;
                     }
                     else
@@ -484,7 +484,9 @@ namespace CameraTest
                     Mat foundFrame = await frameManager.InspectFrames(_frame2, ct, foundCancel.Token);
                     if (foundFrame != null)
                     {
-                        await frameManager.TakePhoto(foundFrame, "Camera2", ct, foundCancel);
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera2", ct, foundCancel);
+                        if (!String.IsNullOrEmpty(found.model))
+                            modelText = found.model.ToString();
                     }
                     else
                     {
@@ -497,7 +499,9 @@ namespace CameraTest
                     Mat foundFrame = await frameManager.InspectFrames(_frame3, ct, foundCancel.Token);
                     if (foundFrame != null)
                     {
-                        await frameManager.TakePhoto(foundFrame, "Camera3", ct, foundCancel);
+                        var found = await frameManager.TakePhoto(foundFrame, "Camera3", ct, foundCancel);
+                        if (!String.IsNullOrEmpty(found.model))
+                            modelText = found.model.ToString();
                     }
                     else
                     {
@@ -505,6 +509,7 @@ namespace CameraTest
                     }
                 }, ct));
                 Task.WhenAll(tasks).Wait();
+                return;
             }
             catch
             {

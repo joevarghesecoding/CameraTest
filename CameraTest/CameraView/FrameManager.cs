@@ -62,6 +62,7 @@ namespace Camera
 
         public async Task<(string barcode, string model)> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts)
         {
+            string barcode = string.Empty;
             try
             {
                 foundCts.Token.ThrowIfCancellationRequested();
@@ -77,16 +78,19 @@ namespace Camera
                 Cv2.ImWrite(ImagePath, _sharpenedImage);
                 try
                 {
-                    string barcode = string.Empty;
-                    string model = string.Empty;
-                    await Task.Run(async () =>
-                    {
-                       
-                        string barcode = await BarCodeReader(ImagePath);
-                        string model = await GetModelNoFromAI(ImagePath, OutputPath);
-                        if (!String.IsNullOrEmpty(barcode) && !String.IsNullOrEmpty(model))
-                            foundCts.Cancel();
-                    });
+                    foundCts.Token.ThrowIfCancellationRequested();
+                    //string barcode = await BarCodeReader(ImagePath, foundCts.Token);
+                    string model = await GetModelNoFromAI(ImagePath, OutputPath, foundCts.Token);
+                    if (/*!String.IsNullOrEmpty(barcode) &&*/ !String.IsNullOrEmpty(model))
+                        foundCts.Cancel();
+                    //await Task.Run(async () =>
+                    //{
+
+                    //    //string barcode = await BarCodeReader(ImagePath);
+                    //    //string model = await GetModelNoFromAI(ImagePath, OutputPath);
+                    //    //if (!String.IsNullOrEmpty(barcode) && !String.IsNullOrEmpty(model))
+                    //    //    foundCts.Cancel();
+                    //});
                     return (barcode, model);
                 }
                 catch (Exception ex)
@@ -130,30 +134,35 @@ namespace Camera
             }
         }
 
-        private async Task<string> GetModelNoFromAI(string inputPath, string outputPath)
+        private async Task<string> GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default)
         {
             string ModelNo = string.Empty;
-            for(int i =0; i < 5; i++)
+            try
             {
-                string output = await AICall(inputPath, outputPath ); // Call the AI Script 
-
-                string text = File.ReadAllText(outputPath);
-                ModelNo = new Regex(@"\**MODEL(\s?No.)?:\**[^\S\r\n]*(?<model>[\w.\-\\]+(?: [\w.-]+)*)")
-                                 .Match(text)
-                                 .Groups["model"]
-                                 .Value;
-                if (String.IsNullOrEmpty(ModelNo))
+                for (int i = 0; i < 5; i++)
                 {
-                    ModelNo = new Regex(@"MODEL: (?<model>[\w]+)")
-                        .Match(text).Groups["model"].Value;
+                    string output = await AICall(inputPath, outputPath); // Call the AI Script 
+                    ct.ThrowIfCancellationRequested();
+                    string text = File.ReadAllText(outputPath);
+                    ModelNo = new Regex(@"\**MODEL(\s?No.)?:\**[^\S\r\n]*(?<model>[\w.\-\\]+(?: [\w.-]+)*)")
+                                     .Match(text)
+                                     .Groups["model"]
+                                     .Value;
+                    if (String.IsNullOrEmpty(ModelNo))
+                    {
+                        ModelNo = new Regex(@"MODEL: (?<model>[\w]+)")
+                            .Match(text).Groups["model"].Value;
+                    }
+
+                    if (!String.IsNullOrEmpty(ModelNo))
+                        break;
+
                 }
-                //MessageBox.Show($"{ModelNo}", "", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 MessageBox.Show($"Model: {ModelNo}");
-                if (!String.IsNullOrEmpty(ModelNo))
-                    break;
-                    
             }
-            
+            catch(OperationCanceledException) when (ct.IsCancellationRequested) { }
+         
+           
             return ModelNo;
         }
 
