@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Tesseract;
 using ZXing;
 
 namespace Camera
@@ -22,15 +23,21 @@ namespace Camera
         public string Model { get; set; }
         public string SN { get; set; }
         private readonly string MistralPath = @"C:\mistraltest.ps1";
-        private readonly string Path = @"C:\CameraCaptures\";
-
+        private readonly string PicPath = @"C:\CameraCaptures\";
+        private static readonly string TessdataPath = Path.Combine(AppContext.BaseDirectory, "tessdata");
+        private const string Languages = "eng"; //
+        public bool AiCallMade;
+        public bool SnCallMade;
         private Form _cameraForm;
+
+        private List<string> KnownAdapters = new List<string> { "MU24E1120200-A1", "PS-2.1-12-2WT2", "CPS024E120200U" };
 
         public FrameManager(Form cameraForm) { _cameraForm = cameraForm; }
      
 
         public async Task<Mat> InspectFrames(Mat _frame, CancellationToken sensorCt, CancellationToken foundCt)
         {
+            Console.WriteLine("---------------Beginning Frame Inspection---------------------");
             Mat sharpenedImage = new Mat();
             Mat _gsframe = new Mat();
             try
@@ -51,9 +58,13 @@ namespace Camera
 
                 double lap_score = LaplacianVariance(sharpenedImage);
                 double ten_score = Tenengrad(sharpenedImage);
+                Console.WriteLine($"------------Laplacian Variance: {lap_score}---------------------");
+                Console.WriteLine($"------------Tenengrad : {ten_score}-----------------------------");
 
-                if (lap_score > 8 && ten_score > 5)
+                
+                if (lap_score > 50 && ten_score > 15)
                 {
+                    Console.WriteLine("---------------Completing Frame Inspection----------------");
                     return sharpenedImage;
                 }
             }
@@ -62,38 +73,25 @@ namespace Camera
         }
         
 
-        public async Task<(string barcode, string model)> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts)
+        public async Task<bool> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts)
         {
-            string barcode = string.Empty;
-            string model = string.Empty;
+            string result = string.Empty;
             try
             {
                 foundCts.Token.ThrowIfCancellationRequested();
                 if (_sharpenedImage == null || _sharpenedImage.Empty())
                 {
-                    MessageBox.Show("No image to capture yet.", "Capture", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return ("", "");
+                    //MessageBox.Show("No image to capture yet.", "Capture", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return false;
                 }
-
-
-                string ImagePath = $@"{Path}\{camera}\Image_1.jpg";
-                string OutputPath = $@"{Path}\{camera}\output.txt";
+                string ImagePath = $@"{PicPath}\{camera}\Image_1.jpg";
+                string OutputPath = $@"{PicPath}\{camera}\output.txt";
                 Cv2.ImWrite(ImagePath, _sharpenedImage);
-                try
-                {
-                    foundCts.Token.ThrowIfCancellationRequested();
-                    await BarCodeReader(ImagePath, foundCts.Token);
-                    await GetModelNoFromAI(ImagePath, OutputPath, foundCts.Token);
-                    
-                    if (!String.IsNullOrEmpty(SN) && !String.IsNullOrEmpty(Model))
-                        foundCts.Cancel();
-                    return (SN, Model);
-                }
-                catch { }
-
+                return true;
+ 
             }
             catch(OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCts.Token.IsCancellationRequested) { }
-            return ("", "");
+            return false ;
         }
 
 
@@ -126,44 +124,100 @@ namespace Camera
             }
         }
 
-        private async Task GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default)
+        public string TesseractBarcodeScanner(string inputPath, CancellationToken ct = default)
+        {
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                using var engine = new TesseractEngine(TessdataPath, Languages, EngineMode.Default);
+                using var img = Pix.LoadFromFile(inputPath);
+                using var page = engine.Process(img);
+
+                string text = page.GetText();
+                float conf = page.GetMeanConfidence() * 100f;
+                if (conf > 85.0)
+                {
+                    return text;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            return string.Empty;
+        }
+
+        public bool GetOcrTesseract(string inputPath, out string Model, CancellationToken ct = default, CancellationTokenSource cts = default)
+        {
+            Model = string.Empty;
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                cts.Token.ThrowIfCancellationRequested();
+                using var engine = new TesseractEngine(TessdataPath, Languages, EngineMode.Default);
+                using var img = Pix.LoadFromFile(inputPath);
+                using var page = engine.Process(img);
+               
+                string text = page.GetText();
+                float conf = page.GetMeanConfidence() * 100f;
+                if(conf > 50.0)
+                {
+                    Console.WriteLine("=== OCR TEXT ===");
+                    Console.WriteLine(text);
+                    Console.WriteLine($"[Mean confidence: {conf:F1}%]");
+
+                    foreach (string adapter in KnownAdapters)
+                    {
+                        if (text.Contains(adapter))
+                        {
+                            Model = adapter;
+                            return true;
+                        }
+
+                    }
+                }
+                
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested || cts.Token.IsCancellationRequested) { }
+            return false;
+        }
+
+
+
+        public async Task<string> GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default, CancellationTokenSource cts = default)
         {
             string ModelNo = string.Empty;
             try
             {
-                for (int i = 0; i < 5; i++)
+                AiCallMade = true;
+                ct.ThrowIfCancellationRequested();
+                cts.Token.ThrowIfCancellationRequested();
+                string output = await AICall(inputPath, outputPath); // Call the AI Script 
+                string text = File.ReadAllText(outputPath);
+                ModelNo = new Regex(@"\**MODEL(\s?No.)?:\**[^\S\r\n]*(?<model>[\w.\-\\]+(?: [\w.-]+)*)")
+                                    .Match(text)
+                                    .Groups["model"]
+                                    .Value;
+                if (String.IsNullOrEmpty(ModelNo))
                 {
-                    string output = await AICall(inputPath, outputPath); // Call the AI Script 
-                    ct.ThrowIfCancellationRequested();
-                    string text = File.ReadAllText(outputPath);
-                    ModelNo = new Regex(@"\**MODEL(\s?No.)?:\**[^\S\r\n]*(?<model>[\w.\-\\]+(?: [\w.-]+)*)")
-                                     .Match(text)
-                                     .Groups["model"]
-                                     .Value;
-                    if (String.IsNullOrEmpty(ModelNo))
-                    {
-                        ModelNo = new Regex(@"MODEL: (?<model>[\w]+)")
-                            .Match(text).Groups["model"].Value;
-                    }
-
-                    if (!String.IsNullOrEmpty(ModelNo))
-                    {
-                        Model = ModelNo;
-                        break;
-                    }
-                       
-
+                    ModelNo = new Regex(@"MODEL: (?<model>[\w]+)")
+                        .Match(text).Groups["model"].Value;
                 }
-                //MessageBox.Show($"Model: {ModelNo}");
-            }
-            catch(OperationCanceledException) when (ct.IsCancellationRequested) { }
 
+                if (!String.IsNullOrEmpty(ModelNo))
+                {
+                    cts.Cancel();
+                    return ModelNo;
+                }
+                
+                AiCallMade = false;
+            }
+            catch(OperationCanceledException) when (ct.IsCancellationRequested || cts.Token.IsCancellationRequested) { }
+            return "";
         }
 
-        private Task BarCodeReader(string imagePath, CancellationToken ct = default)
+        public string BarCodeReader(string imagePath, CancellationToken ct = default)
         {
             try
             {
+                SnCallMade = true;
                 ct.ThrowIfCancellationRequested();
                 var BarcodeReader = new BarcodeReader()
                 {
@@ -177,16 +231,16 @@ namespace Camera
                 };
                 var barcodeBitmap = (Bitmap)Image.FromFile(imagePath);
                 var result = BarcodeReader.Decode(barcodeBitmap);
-                
+
                 if (result != null)
                 {
                     Console.WriteLine("SN : " + result.ToString());
-                    SN = result.ToString();
+                    return result.ToString();
                 }
-               
+                SnCallMade = false;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            return Task.CompletedTask;
+            return "Not Found";
 
         }
 
@@ -238,6 +292,12 @@ namespace Camera
             return Task.FromResult(output);
         }
 
+    }
+
+    public enum PhotoType
+    {
+        Barcode,
+        Model
     }
 
 
