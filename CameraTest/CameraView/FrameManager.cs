@@ -31,6 +31,13 @@ namespace Camera
         private Form _cameraForm;
 
         private List<string> KnownAdapters = new List<string> { "MU24E1120200-A1", "PS-2.1-12-2WT2", "CPS024E120200U" };
+        private Dictionary<string, string> KnownAdaptersMatch = new Dictionary<string, string>
+        {
+            { @"(?<model>P?S?-?2?\.?1?\-?1?2?\-?2?W?T?2?)", "PS-2.1-12-2WT2" },
+            { @"(?<model>M?U?2?4?E?1?1?2?0?2?0?0?\-?A?1?)", "MU24E1120200-A1" },
+            { @"(?<model>C?P?S?0?2?4?E?1?2?0?2?0?0?U?)" , "CPS024E120200U" }
+        };
+
 
         public FrameManager(Form cameraForm) { _cameraForm = cameraForm; }
      
@@ -135,7 +142,7 @@ namespace Camera
 
                 string text = page.GetText();
                 float conf = page.GetMeanConfidence() * 100f;
-                if (conf > 85.0)
+                if (conf > 70.0)
                 {
                     return text;
                 }
@@ -163,15 +170,18 @@ namespace Camera
                     Console.WriteLine(text);
                     Console.WriteLine($"[Mean confidence: {conf:F1}%]");
 
-                    foreach (string adapter in KnownAdapters)
-                    {
-                        if (text.Contains(adapter))
-                        {
-                            Model = adapter;
-                            return true;
-                        }
+                    //foreach (string adapter in KnownAdapters)
+                    //{
+                    //    if (text.Contains(adapter))
+                    //    {
+                    //        Model = adapter;
+                    //        return true;
+                    //    }
 
-                    }
+                    //}
+
+                    Model = BestMatch(text);
+                    return !String.IsNullOrEmpty(Model);
                 }
                 
             }
@@ -179,7 +189,19 @@ namespace Camera
             return false;
         }
 
+        private string BestMatch(string text)
+        {
+            foreach (var match in KnownAdaptersMatch)
+            {
+                var matched = new Regex(match.Key).Matches(text).Cast<Match>()
+                                .Select(i => i.ToString().Length >= (match.Value.Length * 0.8)).ToList()
+                                .Where(i => i == true);
+                if (matched.Any())
+                    return match.Value.ToString();
 
+            }
+            return string.Empty;
+        }
 
         public async Task<string> GetModelNoFromAI(string inputPath, string outputPath, CancellationToken ct = default, CancellationTokenSource cts = default)
         {
