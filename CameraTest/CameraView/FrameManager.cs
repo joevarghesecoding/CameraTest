@@ -42,9 +42,9 @@ namespace Camera
         public FrameManager(Form cameraForm) { _cameraForm = cameraForm; }
      
 
-        public async Task<Mat> InspectFrames(Mat _frame, CancellationToken sensorCt, CancellationToken foundCt)
+        public async Task<(Mat, string imagePath, string name)>  InspectFrames(Mat _frame, CancellationToken sensorCt, CancellationToken foundCt, string frame, string camType)
         {
-            Console.WriteLine("---------------Beginning Frame Inspection---------------------");
+            Console.WriteLine($"---------------Beginning {frame} Inspection---------------------");
             Mat sharpenedImage = new Mat();
             Mat _gsframe = new Mat();
             try
@@ -55,51 +55,86 @@ namespace Camera
 
                 Mat blurryImage = new Mat();
                 //DEV COMMENT - This is somewhat working don't delete
-                //Cv2.GaussianBlur(_gsframe, blurryImage, new OpenCvSharp.Size(0, 0), sigmaX: 1.5); // Adjust sigmaX for blur intensity
                 Cv2.GaussianBlur(_gsframe, blurryImage, new OpenCvSharp.Size(0, 0), sigmaX: 0.25); // Adjust sigmaX for blur intensity
 
                 
                 //DEV COMMENT - This is somewhat working don't delete
-                //Cv2.AddWeighted(_gsframe, 1.25, blurryImage, -0.75, 0, sharpenedImage); // Adjust weights for sharpening intensity
                 Cv2.AddWeighted(_gsframe, 1.75, blurryImage, -0.25, 0, sharpenedImage); // Adjust weights for sharpening intensity
 
                 double lap_score = LaplacianVariance(sharpenedImage);
                 double ten_score = Tenengrad(sharpenedImage);
-                Console.WriteLine($"------------Laplacian Variance: {lap_score}---------------------");
-                Console.WriteLine($"------------Tenengrad : {ten_score}-----------------------------");
+                Console.WriteLine($"------------{frame} Laplacian Variance: {lap_score}---------------------");
+                Console.WriteLine($"------------{frame} Tenengrad : {ten_score}-----------------------------");
 
-                
-                if (lap_score > 50 && ten_score > 15)
+
+                if (lap_score > 40 && ten_score > 10)
                 {
-                    Console.WriteLine("---------------Completing Frame Inspection----------------");
-                    return sharpenedImage;
+                    Console.WriteLine($"---------------Completing {frame} Inspection----------------");
+                    string ImagePath = $@"{PicPath}{camType}\{frame}\Image_1.jpg";
+                    string OutputPath = $@"{PicPath}{camType}\{frame}\output.txt";
+                    var foundFrame = await TakePhoto(sharpenedImage, camType, foundCt, frame);
+                    if(camType == "Barcode")
+                    {
+                        if (!String.IsNullOrEmpty(BarCodeReader(ImagePath, foundCt)) && !BarCodeReader(ImagePath, foundCt).Contains("Not Found"))
+                            return (sharpenedImage, ImagePath, BarCodeReader(ImagePath, foundCt));
+                    }
+                    else
+                    {
+                        string Model = string.Empty;
+                        GetOcrTesseract(ImagePath, out Model, foundCt);
+                        if (!String.IsNullOrEmpty(Model))
+                            return (sharpenedImage, ImagePath, Model);
+                    }
+                    
                 }
+                //return Task.FromResult(sharpenedImage);
             }
             catch (OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCt.IsCancellationRequested) { }
-            return null;
+            return (null, "", "");
         }
         
 
-        public async Task<bool> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts)
+        //public async Task<bool> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, CancellationTokenSource foundCts, string foundFrameStr)
+        //{
+        //    string result = string.Empty;
+        //    try
+        //    {
+        //        foundCts.Token.ThrowIfCancellationRequested();
+        //        if (_sharpenedImage == null || _sharpenedImage.Empty())
+        //        {
+        //            //MessageBox.Show("No image to capture yet.", "Capture", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        //            return false;
+        //        }
+        //        string ImagePath = $@"{PicPath}\{camera}\{foundFrameStr}\Image_1.jpg";
+        //        string OutputPath = $@"{PicPath}\{camera}\{foundFrameStr}\output.txt";
+        //        Cv2.ImWrite(ImagePath, _sharpenedImage);
+        //        return true;
+ 
+        //    }
+        //    catch(OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCts.Token.IsCancellationRequested) { }
+        //    return false ;
+        //}
+
+        public async Task<bool> TakePhoto(Mat _sharpenedImage, string camera, CancellationToken sensorCt, string foundFrameStr)
         {
             string result = string.Empty;
             try
             {
-                foundCts.Token.ThrowIfCancellationRequested();
                 if (_sharpenedImage == null || _sharpenedImage.Empty())
                 {
                     //MessageBox.Show("No image to capture yet.", "Capture", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return false;
                 }
-                string ImagePath = $@"{PicPath}\{camera}\Image_1.jpg";
-                string OutputPath = $@"{PicPath}\{camera}\output.txt";
+                string ImagePath = $@"{PicPath}\{camera}\{foundFrameStr}\Image_1.jpg";
+                string OutputPath = $@"{PicPath}\{camera}\{foundFrameStr}\output.txt";
                 Cv2.ImWrite(ImagePath, _sharpenedImage);
                 return true;
- 
+
             }
-            catch(OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCts.Token.IsCancellationRequested) { }
-            return false ;
+            catch (OperationCanceledException) when (sensorCt.IsCancellationRequested) { }
+            return false;
         }
+
 
 
         private double LaplacianVariance(Mat gray)
@@ -131,6 +166,26 @@ namespace Camera
             }
         }
 
+        public string TesseractScanner(string inputPath, CancellationToken ct = default)
+        {
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                using var engine = new TesseractEngine(TessdataPath, Languages, EngineMode.Default);
+                using var img = Pix.LoadFromFile(inputPath);
+                using var page = engine.Process(img);
+
+                string text = page.GetText();
+                float conf = page.GetMeanConfidence() * 100f;
+                if (conf > 40.0)
+                {
+                    return text;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            return string.Empty;
+        }
+
         public string TesseractBarcodeScanner(string inputPath, CancellationToken ct = default)
         {
             try
@@ -142,7 +197,7 @@ namespace Camera
 
                 string text = page.GetText();
                 float conf = page.GetMeanConfidence() * 100f;
-                if (conf > 70.0)
+                if (conf > 40.0)
                 {
                     return text;
                 }
@@ -151,13 +206,13 @@ namespace Camera
             return string.Empty;
         }
 
-        public bool GetOcrTesseract(string inputPath, out string Model, CancellationToken ct = default, CancellationTokenSource cts = default)
+        public bool GetOcrTesseract(string inputPath, out string Model, CancellationToken ct = default/*, CancellationTokenSource cts = default*/)
         {
             Model = string.Empty;
             try
             {
                 ct.ThrowIfCancellationRequested();
-                cts.Token.ThrowIfCancellationRequested();
+                //cts.Token.ThrowIfCancellationRequested();
                 using var engine = new TesseractEngine(TessdataPath, Languages, EngineMode.Default);
                 using var img = Pix.LoadFromFile(inputPath);
                 using var page = engine.Process(img);
@@ -170,22 +225,12 @@ namespace Camera
                     Console.WriteLine(text);
                     Console.WriteLine($"[Mean confidence: {conf:F1}%]");
 
-                    //foreach (string adapter in KnownAdapters)
-                    //{
-                    //    if (text.Contains(adapter))
-                    //    {
-                    //        Model = adapter;
-                    //        return true;
-                    //    }
-
-                    //}
-
                     Model = BestMatch(text);
                     return !String.IsNullOrEmpty(Model);
                 }
                 
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested || cts.Token.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested /*|| cts.Token.IsCancellationRequested*/) { }
             return false;
         }
 
@@ -225,7 +270,7 @@ namespace Camera
 
                 if (!String.IsNullOrEmpty(ModelNo))
                 {
-                    cts.Cancel();
+                    //cts.Cancel();
                     return ModelNo;
                 }
                 
@@ -247,6 +292,8 @@ namespace Camera
                     Options = new ZXing.Common.DecodingOptions
                     {
                         TryHarder = true,
+                        TryInverted = true,
+                        PureBarcode = false
                         //PossibleFormats = new[] { BarcodeFormat.QR_CODE }
                     },
 
