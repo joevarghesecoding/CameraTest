@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -556,40 +557,30 @@ namespace CameraTest
 
             sn_textbox.Text = "";
             model_textbox.Text = "";
-            using var foundCts = new CancellationTokenSource();
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            snText = string.Empty;
+            modelText = string.Empty;
+            foundCts = new CancellationTokenSource();
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(foundCts.Token, timeoutCts.Token);
-
-            var foundTaskCompletionSourceBarcode = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var foundTaskCompletionSourceModel = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             scanner_timer.Start();
 
             try
             {
-                var barcodeWorker = Task.Run( () => RunCameraProcess(linkedCts.Token, foundCts, foundTaskCompletionSourceBarcode, "Barcode"), linkedCts.Token);
-                var modelWorker = Task.Run(() => RunCameraProcess(linkedCts.Token, foundCts, foundTaskCompletionSourceModel, "Model"), linkedCts.Token);
-                //var completed = await Task.WhenAll(foundTaskCompletionSourceBarcode.Task, foundTaskCompletionSourceModel.Task
-                   /* Task.Delay(Timeout.Infinite, timeoutCts.Token)*/
-                    //.ConfigureAwait(true);
 
-                var resultbarcode = await foundTaskCompletionSourceBarcode.Task;
-                var resultmodel = await foundTaskCompletionSourceModel.Task;
-                sn_textbox.Text = resultbarcode;
-                model_textbox.Text = resultmodel;
-                if (!String.IsNullOrEmpty(resultbarcode) && !String.IsNullOrEmpty(resultmodel))
-                    foundCts.Cancel();
+                var camera1 = Task.Run(async () => await RunCameraProcessAsync(linkedCts.Token, foundCts, _cap1, _frame1, 1));
+                var camera2 = Task.Run(async () => await RunCameraProcessAsync(linkedCts.Token, foundCts, _cap2, _frame2, 2));
+                var camera3 = Task.Run(async () => await RunCameraProcessAsync(linkedCts.Token, foundCts, _cap3, _frame3, 3));
+                var timeout = Task.Delay(Timeout.Infinite, timeoutCts.Token);
+                var CompletedTask = await Task.WhenAny(new Task[] { camera1, camera2, camera3, timeout });
 
-                //if (completed == foundTaskCompletionSourceBarcode.Task)
-                //{
-                //    var results = await foundTaskCompletionSourceBarcode.Task;
-                //    sn_textbox.Text = results;
-                //    model_textbox.Text = results;
-                //}
-                //else
-                //{
-                //    model_textbox.Text = "Not Found";
-                //}
+                if (CompletedTask.Id == timeout.Id)
+                {
+                    if(String.IsNullOrEmpty(model_textbox.Text))
+                        model_textbox.Text = "Not Found";
+                    if(String.IsNullOrEmpty(sn_textbox.Text))
+                        sn_textbox.Text = "Not Found";
+                }
             }
             catch(OperationCanceledException) { }
             finally
@@ -602,6 +593,7 @@ namespace CameraTest
 
         #endregion
 
+        private CancellationTokenSource foundCts;
         private System.Windows.Forms.GroupBox camera1_groupbox;
         private System.Windows.Forms.GroupBox unitinfo_groupbox;
         private System.Windows.Forms.PictureBox camera1_picturebox;

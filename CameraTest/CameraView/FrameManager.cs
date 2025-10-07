@@ -29,20 +29,33 @@ namespace Camera
         public bool AiCallMade;
         public bool SnCallMade;
         private Form _cameraForm;
+        private int focusVal = 0;
+        private bool focusPositive = true;
+        private int focusIncrement = 1;
 
         private List<string> KnownAdapters = new List<string> { "MU24E1120200-A1", "PS-2.1-12-2WT2", "CPS024E120200U" };
         private Dictionary<string, string> KnownAdaptersMatch = new Dictionary<string, string>
         {
             { @"(?<model>P?S?-?2?\.?1?\-?1?2?\-?2?W?T?2?)", "PS-2.1-12-2WT2" },
             { @"(?<model>M?U?2?4?E?1?1?2?0?2?0?0?\-?A?1?)", "MU24E1120200-A1" },
-            { @"(?<model>C?P?S?0?2?4?E?1?2?0?2?0?0?U?)" , "CPS024E120200U" }
-        };
+            { @"(?<model>C?P?S?0?2?4?E?1?2?0?2?0?0?U?)" , "CPS024E120200U" },
+            { @"(?<model>A?D?S?\-?1?2?\s?1?2?0?4?2?E?P?C?U?\-?L?)", "ADS-42DG-12 12042EPCI-L" },
+            { @"(?<model>P?S?\-?3?\.?3?\-?1?2?\-?3?\-?D?C?)", "PS-3.3-12-3-DC" }
+        }; 
 
 
         public FrameManager(Form cameraForm) { _cameraForm = cameraForm; }
      
-
-        public async Task<(Mat, string imagePath, string name)>  InspectFrames(Mat _frame, CancellationToken sensorCt, CancellationToken foundCt, string frame, string camType)
+        /// <summary>
+        /// Inspects the current frame from the capture and returns a good image if it's able to retrieve readable texts.
+        /// </summary>
+        /// <param name="_frame"></param>
+        /// <param name="sensorCt"></param>
+        /// <param name="foundCt"></param>
+        /// <param name="frame"></param>
+        /// <param name="camType"></param>
+        /// <returns></returns>
+        public async Task<(Mat, string imagePath, string name)>  InspectFrames(VideoCapture cap, Mat _frame, CancellationToken sensorCt, CancellationToken foundCt, string frame, string camType)
         {
             Console.WriteLine($"---------------Beginning {frame} Inspection---------------------");
             Mat sharpenedImage = new Mat();
@@ -67,7 +80,7 @@ namespace Camera
                 Console.WriteLine($"------------{frame} Tenengrad : {ten_score}-----------------------------");
 
 
-                if (lap_score > 40 && ten_score > 10)
+                if (lap_score > 20 && ten_score > 10)
                 {
                     Console.WriteLine($"---------------Completing {frame} Inspection----------------");
                     string ImagePath = $@"{PicPath}{camType}\{frame}\Image_1.jpg";
@@ -87,7 +100,30 @@ namespace Camera
                     }
                     
                 }
-                //return Task.FromResult(sharpenedImage);
+                else
+                {
+                    //Auto focus logic
+                    if(focusVal < 10)
+                    {
+                        focusVal++;
+                    }
+                    if(focusIncrement == 10 && focusPositive)
+                    {
+                        focusPositive = false;
+                        focusVal = 0;
+                        focusIncrement *= -1;
+                    }
+                    else if(focusIncrement == 10 && !focusPositive)
+                    {
+                        focusPositive = true;
+                        focusVal = 0;
+                        focusIncrement *= -1;
+                    }
+                   
+                    double currentFocus = cap.Focus + focusIncrement;
+                    bool set = cap.Set(VideoCaptureProperties.AutoFocus, 0);
+                    bool set2 = cap.Set(VideoCaptureProperties.Focus, currentFocus);
+                }
             }
             catch (OperationCanceledException) when (sensorCt.IsCancellationRequested || foundCt.IsCancellationRequested) { }
             return (null, "", "");

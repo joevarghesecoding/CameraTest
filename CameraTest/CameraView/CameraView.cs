@@ -88,7 +88,7 @@ namespace CameraTest
                 _cap1.Set(VideoCaptureProperties.Fps, 10);
 
                 // Initialize properties
-                _cap1.Set(VideoCaptureProperties.AutoFocus, 1); // auto focus by default
+                bool set = _cap1.Set(VideoCaptureProperties.AutoFocus, 0); // auto focus by default
 
                 _frame1 = new Mat();
                 _gsframe1 = new Mat();
@@ -96,11 +96,6 @@ namespace CameraTest
 
 
                 camera1_timer.Start();
-
-                //_cap1.Set(VideoCaptureProperties.Focus, 10);    // hardcode focus = 10
-                //_cap1.Set(VideoCaptureProperties.Brightness, 70); // hardcode brightness = 70
-
-                //Task.Delay(500).Wait();
 
                 _cap1.Set(VideoCaptureProperties.Focus, 8);    // hardcode focus = 20
                 _cap1.Set(VideoCaptureProperties.Brightness, 70); // hardcode brightness = 90
@@ -142,7 +137,7 @@ namespace CameraTest
                 _cap2.Set(VideoCaptureProperties.Fps, 10);
 
                 // Initialize properties
-                _cap2.Set(VideoCaptureProperties.AutoFocus, 1); // auto focus by default
+                _cap2.Set(VideoCaptureProperties.AutoFocus, 0); // auto focus by default
 
                 _frame2 = new Mat();
                 _gsframe2 = new Mat();
@@ -156,7 +151,7 @@ namespace CameraTest
 
                 //Task.Delay(500).Wait();
 
-                _cap2.Set(VideoCaptureProperties.Focus, 20);    // hardcode focus = 20
+                _cap2.Set(VideoCaptureProperties.Focus, 8);    // hardcode focus = 20
                 _cap2.Set(VideoCaptureProperties.Brightness, 70); // hardcode brightness = 90
                 _cap2.Set(VideoCaptureProperties.Zoom, 100);
 
@@ -196,7 +191,7 @@ namespace CameraTest
                 _cap3.Set(VideoCaptureProperties.Fps, 10);
 
                 // Initialize properties
-                _cap3.Set(VideoCaptureProperties.AutoFocus, 1); // auto focus by default
+                _cap3.Set(VideoCaptureProperties.AutoFocus, 0); // auto focus by default
 
                 _frame3 = new Mat();
                 _gsframe3 = new Mat();
@@ -210,7 +205,7 @@ namespace CameraTest
 
                 Task.Delay(500).Wait();
 
-                _cap3.Set(VideoCaptureProperties.Focus, 30);    // hardcode focus = 20
+                _cap3.Set(VideoCaptureProperties.Focus, 8);    // hardcode focus = 20
                 _cap3.Set(VideoCaptureProperties.Brightness, 70); // hardcode brightness = 90
                 _cap3.Set(VideoCaptureProperties.Zoom, 100);
 
@@ -381,7 +376,6 @@ namespace CameraTest
                     Cv2.Resize(_frame3, zoomedoutImage, new OpenCvSharp.Size(), zoom3, zoom3, InterpolationFlags.Linear);
                     var newBmp = MatToBitmap(zoomedoutImage);
                     // Convert to bitmap and safely swap into PictureBox
-                    //var newBmp = MatToBitmap(_frame1);
                     var old = camera3_picturebox.Image;
                     camera3_picturebox.Image = newBmp;
                     old?.Dispose();
@@ -456,93 +450,40 @@ namespace CameraTest
         }
 
         #endregion
-        private async Task RunCameraProcess(CancellationToken ct, CancellationTokenSource foundCts, TaskCompletionSource<string> foundTcs, string camera)
+        
+        private async Task RunCameraProcessAsync(CancellationToken ct, CancellationTokenSource foundCts, VideoCapture cap, Mat frame, int cam)
         {
             try
             {
-                var FindFrame = (string camType) =>
+                var FindFrame = async () =>
                 {
-                    List<Task<(Mat, string, string)>> frameTasks = new List<Task<(Mat, string, string)>>();
-                    //Task<(Mat, string)> foundFrame1 = frameManager.InspectFrames(_frame1, ct, foundCts.Token, "Frame_1", camType);
-                    //Task<(Mat, string)> foundFrame2 = frameManager.InspectFrames(_frame2, ct, foundCts.Token, "Frame_2", camType);
-                    Task<(Mat, string, string)> foundFrame3 = frameManager.InspectFrames(_frame3, ct, foundCts.Token, "Frame_3", camType);
-                    //frameTasks.Add(foundFrame1);
-                    //frameTasks.Add(foundFrame2);
-                    frameTasks.Add(foundFrame3);
-                    var foundFrameTask = Task.WhenAny(frameTasks.ToArray()).Result;
-                    var foundFrame = foundFrameTask.Result;
-                    string foundFramePath = foundFrame.Item2;
-                    string foundResult = foundFrame.Item3;
-                    return (foundFrame, foundFramePath, foundResult);
+                    string frameName = $"Frame_{cam}";
+                    var foundBarcodeFrame = await frameManager.InspectFrames(cap, frame, ct, foundCts.Token, frameName, "Barcode");
+                    var foundModelFrame = await frameManager.InspectFrames(cap, frame, ct, foundCts.Token, frameName, "Model");
+
+                    if (!String.IsNullOrEmpty(foundBarcodeFrame.name))
+                        snText = foundBarcodeFrame.name;
+                    if (!String.IsNullOrEmpty(foundModelFrame.name))
+                        modelText = foundModelFrame.name;
                 };
 
-                string result = string.Empty;
-                DateTime now = DateTime.Now;
-                DateTime future = DateTime.Now.AddSeconds(15);
-                if (camera.Contains("Barcode"))
+                while (!foundCts.IsCancellationRequested)
                 {
-                    while (now < future)
-                    {
-                        now = DateTime.Now;
-                        var foundFrame = FindFrame("Barcode");
-                        if (!String.IsNullOrEmpty(foundFrame.foundResult))
-                        {
-                            result = frameManager.TesseractBarcodeScanner(foundFrame.foundFramePath, ct);
-                            if (!String.IsNullOrEmpty(result))
-                            {
-                                result = frameManager.BarCodeReader(foundFrame.foundFramePath, ct);
-                            }
-                            Console.WriteLine($"Barcode found: {result}");
-                            if (!String.IsNullOrEmpty(result) && result != "Not Found") break;
-                        }
-                        else
-                        {
-                            result = foundFrame.foundResult;
-                        }
-
-
-                    }
+                    await FindFrame();
                 }
-                else
-                {
-
-                    while (now < future && !foundCts.Token.IsCancellationRequested)
-                    {
-                        now = DateTime.Now;
-                        string foundFrameStr = string.Empty;
-                        var foundFrame = FindFrame("Model");
-
-                        if (String.IsNullOrEmpty(foundFrame.foundResult))
-                        {
-                            Task.Run(async () =>
-                            {
-                                await Task.Delay(2000);
-                                result = await frameManager.GetModelNoFromAI(foundFrame.foundFramePath, foundFrame.foundFramePath.Replace("Image_1.jpg", "output.txt"), ct, foundCts);
-                            }, foundCts.Token);
-                            //if (!String.IsNullOrEmpty(result))
-                                //foundCts.Cancel();
-                        }
-                        else
-                        {
-                            result = foundFrame.foundResult;
-                            //foundCts.Cancel();
-                        }
-
-                    }
-                }
-
-                foundTcs.TrySetResult(result);
-                return;
             }
-            catch
-            {
+            catch (OperationCanceledException) when (foundCts.IsCancellationRequested || ct.IsCancellationRequested) { }
 
-            }
         }
-
+        
         private void scanner_timer_Tick(object sender, EventArgs e)
         {
-           
+            if(!String.IsNullOrEmpty(snText))
+                sn_textbox.Text = snText;
+            if(!String.IsNullOrEmpty(modelText))
+                model_textbox.Text = modelText;
+            if (!String.IsNullOrEmpty(snText) && !String.IsNullOrEmpty(modelText))
+                foundCts.Cancel();
         }
 
      
